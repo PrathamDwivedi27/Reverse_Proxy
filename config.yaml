@@ -1,0 +1,26 @@
+server:
+  listen: 8080 # Reverse proxy is running on port 8080
+  workers: 4
+  upstreams:
+    - id: node1
+      url: http://localhost:8001
+
+    - id: node2
+      url: http://localhost:8002
+
+  headers:
+    - key: x-forward-for
+      value: '$ip'
+
+    - key: x-forward-proto
+      value: '$scheme'
+
+  rules:
+    - path: /
+      upstream: 
+        - node1
+        - node2
+
+    - path: /admin
+      upstream: 
+        - node2
