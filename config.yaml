@@ -1,5 +1,5 @@
 server:
-  listen: 8080 # Reverse proxy is running on port 8080
+  listen: 8081 # Reverse proxy is running on port 8080
   workers: 4
   upstreams:
     - id: node1
