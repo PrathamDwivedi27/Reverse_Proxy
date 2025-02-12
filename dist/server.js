@@ -43,6 +43,20 @@ function createServer(config) {
                     url: `${req.url}`
                 };
                 worker.send(JSON.stringify(payload));
+                worker.on('message', (workerReply) => __awaiter(this, void 0, void 0, function* () {
+                    const reply = yield server_schema_1.workerMessageReplySchema.parseAsync(JSON.parse(workerReply));
+                    console.log(reply);
+                    if (reply.errorCode) {
+                        res.writeHead(parseInt(reply.errorCode));
+                        res.end(reply.error);
+                        return;
+                    }
+                    else {
+                        res.writeHead(200);
+                        res.end(reply.data);
+                        return;
+                    }
+                }));
             });
             // console.log(port);
             server.listen(config.port, function () {
@@ -55,7 +69,48 @@ function createServer(config) {
             // console.log(configuration);
             process.on('message', (message) => __awaiter(this, void 0, void 0, function* () {
                 // console.log(`message recieved by worker with processID ${process.pid}`,message);
-                const messageValidate = yield server_schema_1.workerMessageSchema.parseAsync(JSON.parse(message)); //validating that the message you recieved follow schema
+                const messageValidated = yield server_schema_1.workerMessageSchema.parseAsync(JSON.parse(message)); //validating that the message you recieved follow schema
+                const requestURL = messageValidated.url; //jo message aaya usme url hai na
+                const rule = config.config.server.rules.find((e) => {
+                    const regex = new RegExp(`^${e.path}.*$`); //agar path match hota hai to us rule ko apply karna padega
+                    return regex.test(requestURL);
+                });
+                if (!rule) {
+                    const reply = {
+                        errorCode: '404',
+                        error: 'Rule not found'
+                    };
+                    if (process.send)
+                        return process.send(JSON.stringify(reply));
+                    //agar rule hai to uska upstream decide karna padega
+                }
+                const upstreamID = rule === null || rule === void 0 ? void 0 : rule.upstream[0];
+                const upstream = configuration.server.upstreams.find((e) => e.id === upstreamID);
+                if (!upstream) {
+                    const reply = {
+                        errorCode: '500',
+                        error: 'Upstream not found'
+                    };
+                    if (process.send)
+                        return process.send(JSON.stringify(reply));
+                }
+                const request = node_http_1.default.request({
+                    host: upstream === null || upstream === void 0 ? void 0 : upstream.url,
+                    path: requestURL
+                }, (proxyRes) => {
+                    let body = '';
+                    proxyRes.on('data', (chunk) => {
+                        body += chunk;
+                    });
+                    proxyRes.on('end', () => {
+                        const reply = {
+                            data: body,
+                        };
+                        if (process.send)
+                            return process.send(JSON.stringify(reply));
+                    });
+                });
+                request.end();
             }));
         }
     });

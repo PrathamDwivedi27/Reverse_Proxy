@@ -1,12 +1,19 @@
 server:
-  listen: 8081 # Reverse proxy is running on port 8080
+  listen: 8080 # Reverse proxy is running on port 8080
   workers: 4
   upstreams:
-    - id: node1
-      url: http://localhost:8001
+    # - id: posts
+    #   url: jsonplaceholder.typicode.com/posts
 
-    - id: node2
-      url: http://localhost:8002
+    # - id: comments
+    #   url: jsonplaceholder.typicode.com/comments  ye galt url hai /comments nhi hoga kyunki phir wo ek endpoint ban jayega naa ki url 
+
+    - id:  jsonplaceholder
+      url: jsonplaceholder.typicode.com   
+      # ye hai mera upstream ka url jaise hum redirect kar rhe request ko kisi server pe uss server ka url hai ye
+
+    - id : dummy
+      url: dummyjson.com
 
   headers:
     - key: x-forward-for
@@ -16,11 +23,22 @@ server:
       value: '$scheme'
 
   rules:
-    - path: /
+    - path: /todos
       upstream: 
-        - node1
-        - node2
+        - jsonplaceholder
 
-    - path: /admin
+    - path: /posts
       upstream: 
-        - node2
+        - jsonplaceholder
+
+    - path: /comments
+      upstream: 
+        - jsonplaceholder
+
+    - path: /test
+      upstream:
+        - dummy
+
+  
+
+# So the thing is we are getting redirected to upstream means upsteam+path so upstream/path

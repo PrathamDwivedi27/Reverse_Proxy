@@ -1,7 +1,7 @@
 import http from 'node:http'
 import { ConfigSchemaType, rootConfigSchema } from "./config/config-schema";
 import cluster,{Worker} from 'node:cluster'
-import { workerMessageSchema, WorkerMessageType } from './config/server-schema';
+import { workerMessageReplySchema, workerMessageReplyType, workerMessageSchema, WorkerMessageType } from './config/server-schema';
 
 
 interface CreateServerConfig{
@@ -42,6 +42,21 @@ export async function createServer(config: CreateServerConfig){
             };
             worker.send(JSON.stringify(payload));
 
+            worker.on('message',async (workerReply:string)=>{
+                const reply=await workerMessageReplySchema.parseAsync(JSON.parse(workerReply));
+                console.log(reply);
+                if(reply.errorCode){
+                    res.writeHead(parseInt(reply.errorCode));
+                    res.end(reply.error);
+                    return ;
+                }
+                else {
+                    res.writeHead(200);
+                    res.end(reply.data);
+                    return ;
+                }
+            })
+
         })
         // console.log(port);
         server.listen(config.port,function(){
@@ -54,9 +69,53 @@ export async function createServer(config: CreateServerConfig){
         // console.log(configuration);
         process.on('message',async (message:string)=>{
             // console.log(`message recieved by worker with processID ${process.pid}`,message);
-            const messageValidate=await workerMessageSchema.parseAsync(JSON.parse(message));    //validating that the message you recieved follow schema
+            const messageValidated=await workerMessageSchema.parseAsync(JSON.parse(message));    //validating that the message you recieved follow schema
 
-            
-        })
+            const requestURL=messageValidated.url;  //jo message aaya usme url hai na
+            const rule=config.config.server.rules.find((e)=>{
+                const regex=new RegExp(`^${e.path}.*$`);    //agar path match hota hai to us rule ko apply karna padega
+                return regex.test(requestURL);  
+            });
+
+            if(!rule){
+                const reply:workerMessageReplyType={
+                    errorCode:'404',
+                    error:'Rule not found'
+                };
+                if(process.send) return process.send(JSON.stringify(reply));
+                //agar rule hai to uska upstream decide karna padega
+
+            }
+            const upstreamID=rule?.upstream[0];
+            const upstream=configuration.server.upstreams.find((e)=>e.id===upstreamID);
+
+            if(!upstream){
+                const reply:workerMessageReplyType={
+                    errorCode:'500',
+                    error:'Upstream not found'
+                };
+                if(process.send) return process.send(JSON.stringify(reply));
+            }
+
+
+            const request=http.request({
+                host:upstream?.url, 
+                path:requestURL
+            },(proxyRes)=>{
+                let body='';
+
+                proxyRes.on('data',(chunk)=>{
+                    body+=chunk;
+                })
+
+                proxyRes.on('end',()=>{
+                    const reply:workerMessageReplyType={
+                        data:body,
+                    };
+                    if( process.send) return process.send(JSON.stringify(reply));
+                })
+            });
+            request.end();
+        });
     }
 }
